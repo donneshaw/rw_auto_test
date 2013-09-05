@@ -2,7 +2,7 @@ RwAutoTest::Application.routes.draw do
 
   post "api/advertise", to: 'api#advertise'
   post "api/heartbeat", to: 'api#heartbeat'
-
+  post "api/rw_test", to: 'api#rw_test'
   post "api/login", to: 'api#login'
 
   # The priority is based upon order of creation:
