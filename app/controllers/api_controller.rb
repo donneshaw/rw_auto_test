@@ -7,6 +7,8 @@ class ApiController < ApplicationController
   @@command = nil
   @@heartbeat_time  # the time when the latest heartbeat is received
   @@wake_success = false
+  TEST_TIMES = 10
+
 
   def login
     render file: Rails.root + "app/jsons/login.json" , content_type: "application/json"
@@ -64,9 +66,17 @@ class ApiController < ApplicationController
     puts "Logged TimeStamp:#{t} | #{t.to_i}"
   end
 
-  def rw_test1
+  def rw_test2
     @@command = "sleep"
     render nothing: true
+  end  
+
+  def rw_test3
+    render nothing: true
+    rw = WakeSession.new(@@sessionId)
+#    rw.wake
+    rw.sendMagicPkt
+
   end  
 
   def rw_test
@@ -75,13 +85,13 @@ class ApiController < ApplicationController
       return
     end
     
-    Thread.new do |j|
+    Thread.new do 
       @@test_running = true
       # to run the test for 10 times
       puts "-------------------------- Test case starts to run -------------------------"
       log_time
 
-      10.times do |i|
+      TEST_TIMES.times do |i|
         puts "--------------test cycle: #{i} starts ---------------------------"
         if @@sessionId.nil? then 
           puts "\nSessionId is nil,wait for new session Id..."
@@ -102,7 +112,7 @@ class ApiController < ApplicationController
 
         # 1. put PC to sleep: send sleep command 
 
-        @@command = "sleep"          
+        # @@command = "sleep"          
 
         # 2. Check session state to see if PC has gone to sleep
         rw = WakeSession.new(@@sessionId)
@@ -170,9 +180,13 @@ class ApiController < ApplicationController
         
         if @@wake_success == false then
           puts "----------Wake up command failed in test cycle #{i}------------------------" 
-          puts "----------Test case execution abort ------------------------------------"
+          # puts "----------Test case execution abort ------------------------------------"
           # todo: use Magic Packet to wake up the PC
-          return
+          rw.sendMagicPkt
+          log_time
+          puts "-----------Send Magic Packet to wake up the PC --------------------------"
+          sleep(30)          
+          next
         end
       end
       puts "-------------------------- Test case execution complete -------------------------"

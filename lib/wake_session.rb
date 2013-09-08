@@ -4,6 +4,7 @@ require 'openssl'
 require 'net/http'
 require 'net/https'
 require 'httparty'
+require 'socket'
 
 class WakeSession
  
@@ -117,5 +118,27 @@ class WakeSession
     HTTParty.delete(url, 
       :headers => { 'Content-Type' => 'application/json' } )
   end 
+
+  def sendMagicPkt
+    #macAddr = '3C:A9:F4:42:C7:74' # todo: comment this line after test.
+    # todo: set ruby default encoding to UTF-8
+    macAddr = "3C:A9:F4:42:C7:74".force_encoding("ASCII-8BIT")
+    begin
+      addr = ['<broadcast>', 9]
+      udpSock = UDPSocket.new
+      udpSock.setsockopt(Socket::SOL_SOCKET, Socket::SO_BROADCAST, true)
+      data = "\xFF\xFF\xFF\xFF\xFF\xFF".force_encoding("ASCII-8BIT")
+      puts data.encoding
+      puts macAddr.encoding
+      arr = macAddr.split(':')
+      16.times do |i|
+        data<< arr[0].hex.chr+arr[1].hex.chr+arr[2].hex.chr+arr[3].hex.chr+arr[4].hex.chr+arr[5].hex.chr
+      end
+      puts("Wake-On-Lan packet sent to MAC address " + macAddr)
+      udpSock.send(data, 0, addr[0], addr[1])
+    rescue Exception => msg
+      puts msg
+    end
+  end
   
 end
