@@ -4,6 +4,8 @@ RwAutoTest::Application.routes.draw do
   post "api/heartbeat", to: 'api#heartbeat'
   post "api/rw_test", to: 'api#rw_test'
   post "api/rw_test1", to: 'api#rw_test1'
+  post "api/rw_test_sleep", to: 'api#rw_test_sleep'
+  post "api/rw_test_wake", to: 'api#rw_test_wake'
   post "api/login", to: 'api#login'
 
   # The priority is based upon order of creation:

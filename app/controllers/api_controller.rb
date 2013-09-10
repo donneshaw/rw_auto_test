@@ -2,13 +2,11 @@ require 'wake_session'
 
 class ApiController < ApplicationController
   layout false
-  @@test_running = false
+  @@test_running = false  # to limit that only one thread of test execution is running
   @@sessionId = nil
   @@command = nil
   @@heartbeat_time  # the time when the latest heartbeat is received
-  @@wake_success = false
   TEST_TIMES = 10
-
 
   def login
     render file: Rails.root + "app/jsons/login.json" , content_type: "application/json"
@@ -27,7 +25,7 @@ class ApiController < ApplicationController
     end
   
     @@sessionId = session_id
-    puts "New session Id is received #{session_id}"
+    logger.info "-------- New session Id is received: #{session_id} -----------"
     log_time
   end
 
@@ -39,45 +37,15 @@ class ApiController < ApplicationController
       render file: Rails.root + "app/jsons/heartbeat_sleep.json" , content_type: "application/json"
       @@command = nil
       # log the time when the sleep command is sent
-      puts "Command sent: Sleep"
+      logger.info "------------------ Command sent: Sleep ------------------"
       log_time
     end
   end
 
-  def rw_test1
-    render nothing: true
-    if @@sessionId.nil? then 
-      puts "\n\nSessionId is nil"
-      return
-    end
-
-    rw = WakeSession.new(@@sessionId)
-    hash =  rw.state
-    if hash.nil? then
-      puts "\nGet nil response from Intel wake service when query session state."
-      return
-    end
-    puts hash["Session"]["Status"]
-    
-  end  
-  
   def log_time
     t = Time.now
-    puts "Logged TimeStamp:#{t} | #{t.to_i}"
+    logger.info "Logged TimeStamp:#{t} | #{t.to_i}"
   end
-
-  def rw_test2
-    @@command = "sleep"
-    render nothing: true
-  end  
-
-  def rw_test3
-    render nothing: true
-    rw = WakeSession.new(@@sessionId)
-#    rw.wake
-    rw.sendMagicPkt
-
-  end  
 
   def rw_test
     render nothing: true
@@ -88,110 +56,192 @@ class ApiController < ApplicationController
     Thread.new do 
       @@test_running = true
       # to run the test for 10 times
-      puts "-------------------------- Test case starts to run -------------------------"
+      logger.info "\n"
+      logger.info "-------------------------- Test case starts to run -------------------------"
+      logger.info "------------------- Total #{TEST_TIMES} cycles to be run --------------------"
       log_time
 
       TEST_TIMES.times do |i|
-        puts "--------------test cycle: #{i} starts ---------------------------"
-        if @@sessionId.nil? then 
-          puts "\nSessionId is nil,wait for new session Id..."
-          log_time
-          10.times do
-            if @@sessionId.nil? == false then
-              puts "New sessionId is got."
-              log_time
-              break
-            end
-            sleep(4)
-          end
-          if @@sessionId.nil? then
-            puts "----------------Test case execution abort because of nil sessionId! --------------"
-            return
-          end
-        end
-
-        # 1. put PC to sleep: send sleep command 
-
-        # @@command = "sleep"          
-
-        # 2. Check session state to see if PC has gone to sleep
-        rw = WakeSession.new(@@sessionId)
-        @@wake_success = false
-  
-        # try to get the "Sleeping"  session state in 1 min. If not, regard that the "Sleep" command fail.
-        status = "0"
-        12.times do |k|
-          puts "Check session state for cycle: #{k}"
-          log_time
-          hash =  rw.state
-          if hash.nil? then
-            puts "\nGet nil response from Intel wake service when query session state."
-            puts "Failed check cycle: #{k} " 
-            sleep(20)
-            next
-          end
-
-          status = hash["Session"]["Status"]
-          if status == "1" then
-            puts "Session state has changed from UNKNOWN to SLEEPING"
-            log_time
-            break #todo: check if "break" jump out of the 12 times loop
-          end
-
-          sleep(5)
-        end
         
-        if status != "1" then
-          # check if there's heartbeat in the last 10s from PC to verify if PC is really sleep.
-          t = Time.now.to_i - @@heartbeat_time
-          if t < 10 then
-            puts "RemoteMonitor PC is still awake. The Sleep command failed."
-          else
-            puts "RemoteMonitor PC is not sending heartbeat, it may be in sleeping or disconnected from network."
+        # 1. setup test preconditions:
+        # preconditions for a new test cycle:
+        # a. a valid session id is got.
+        # b. RemoteMonitor PC is in sleeping.
+        if setup == false then
+          logger.info "\n"
+          logger.info "------------------ Test setup failed, test execution aborted ------------------"
+          return
+        end
+        logger.info "----------------------- Test cycle #{i}: starts ---------------------------"
+
+        # 2. Check session state 
+        rw = WakeSession.new(@@sessionId)
+        hash =  rw.state
+        if hash.nil? then
+          logger.info "---------- start to check session response in test cycle #{i} ----------------"
+          log_time 
+          gd_time = 0 # guard time
+          begin
+            sleep(4)
+            hash =  rw.state
+            gd_time += 4
+          end while hash.nil? and gd_time < 60
+          logger.info "---------- finish checking session response in test cycle #{i} ----------------"
+          if hash.nil? then
+            logger.info "----------- fail to get valid session response from Intel RW service --------"
+            logger.info "---------------------- Test abort in test cycle #{i}-------------------------"
+            log_time 
+            return 
           end
-          # if there's heartbeat, then PC is not in sleeping state; otherwise PC is in sleeping state or disconnected from network.
-          puts "Session state fails to change to 'Sleeping' after PC goes to sleep."
+        end
+
+        # try to get the "Sleeping"  session state in 2 min. If not, regard that the "Sleep" command fail.
+        status = hash["Session"]["Status"]
+        gd_time = 0
+        logger.info "---------- start to check session status in test cycle #{i} ----------------"
+        log_time
+        while status == "0" and gd_time < 120 do
+          sleep(5)
+          gd_time += 5
+          hash = rw.state
+          status = hash["Session"]["Status"]
+        end        
+        logger.info "----------finish checking session status in test cycle #{i} ----------------"
+        log_time
+                 
+        if status == "1" then
+          logger.info "------------- Session state has changed from UNKNOWN to SLEEPING ------------"
+          log_time
+        else
+          logger.info "----- Session state fails to change to 'Sleeping' after PC goes to sleep.-------"
           rw = nil # to release the wakeSession object.
-          # todo: jump to the next time of loop
+          logger.info "------------------Test cycle #{i} fails -------------------------- "
+          @@sessionId = nil
           next
         end
 
-        # 3. Send "Wake Up" command to PC 10s after it sleeps
-        # todo: 
-        #  a. log the time when "wake up" command is sent
-        #  b. wait advertise/heartbeat from PC 
+        # 3. Send "Wake Up" command to wake PC up
         sleep(10)
         rw.wake 
-        @sesssionId = nil # to wait for new session Id
-        puts "Command sent: Wake Up."
+        @sessionId = nil # to wait for new session Id
+        logger.info "----------------- Command sent: Wake Up.-------------------------"
         log_time
-        15.times do
+        # wait for heartbeat
+        gd_time = 0
+        while (Time.now.to_i - @@heartbeat_time) > 10 and gd_time < 60 do
           sleep(4)
-          t = Time.now.to_i - @@heartbeat_time
-          if t < 6 then 
-            @@wake_success = true
-            puts "Wake up the remoteMonitor PC successfully."
-            log_time
-            puts "--------------test cycle: #{i} succeeds ---------------------------"
-            sleep(30) #wait 30s to get a new sessionId
-            break
-          end
+          gd_time += 4
         end
-        
-        if @@wake_success == false then
-          puts "----------Wake up command failed in test cycle #{i}------------------------" 
-          # puts "----------Test case execution abort ------------------------------------"
-          # todo: use Magic Packet to wake up the PC
-          rw.sendMagicPkt
+        t = Time.now.to_i - @@heartbeat_time
+        if t < 6 then 
+          logger.info "--------------- Wake up the remoteMonitor PC successfully.---------------"
+          logger.info "------------------- Test cycle #{i}: succeeds ---------------------------"
           log_time
-          puts "-----------Send Magic Packet to wake up the PC --------------------------"
-          sleep(30)          
-          next
+        else
+          logger.info "------------ Wake up command failed in test cycle #{i} --------------------" 
+          logger.info "------------------------ Test cycle #{i} failed ---------------------------" 
+          log_time
         end
       end
-      puts "-------------------------- Test case execution complete -------------------------"
-    
+      logger.info "-------------------------- Test case execution complete -------------------------"
       @@test_running = false
     end
   end
+
+  def rw_test_temp
+    render nothing: true
+    if @@sessionId.nil? then 
+      logger.info "\n\nSessionId is nil"
+      return
+    end
+
+    rw = WakeSession.new(@@sessionId)
+    hash =  rw.state
+    if hash.nil? then
+      logger.info "\nGet nil response from Intel wake service when query session state."
+      return
+    end
+    logger.info hash["Session"]["Status"]
+  end  
+
+  def rw_test_sleep
+    @@command = "sleep"
+    render nothing: true
+  end  
+
+  def rw_test_wake
+    render nothing: true
+    rw = WakeSession.new(@@sessionId)
+#    rw.wake
+    rw.sendMagicPkt
+
+  end  
+
+private 
+
+  def setup
+    # make preconditions for a test cycle:
+    # 1. sessionId is not nil
+    # 2. RemoteMonitor PC is in sleeping.(No heartbeat received in the past 10s)
+    logger.info "------------------------- Test setup: start ---------------------------"
+    logger.info "-------------------- Start to wait for new session Id -----------------"
+    log_time
+    guard_time = 0
+    while @@sessionId.nil? do
+      if guard_time > 60*5 then
+        logger.info "---------------- Test setup failed to get session Id within guard time -------------"
+        return false
+      end
+      #if heartbeat stopped, try to wake the PC by Magic Packet, at most try for 2 times
+      2.times do
+        if (Time.now.to_i - @@heartbeat_time) > 10 then
+          rw = WakeSession.new
+          rw.sendMagicPkt
+          @sessionId = nil # to wait for new session Id
+          sleep(10)
+        end
+      end        
+      
+      if (Time.now.to_i - @@heartbeat_time) > 10 then
+        # 2 times of Magic Packets fail to wake up the PC
+        # setup fail
+        logger.info "--------------- Magic Packet fail to wake up RemoteMonitor PC for 2 times ---------------"
+        return false       
+      end
+
+      # PC is sending HB, check session Id every 4s
+      sleep(4)
+      guard_time += 4
+    end 
+
+    # wait for PC to sleep(stop sending heartbeat)
+    guard_time = 0
+    while (Time.now.to_i - @@heartbeat_time) < 10 do
+      if guard_time > 60*2 then
+        @@command = "sleep"          
+        logger.info "-------------- Test setup failed to wait for PC to auto sleep within guard time -------------"
+        logger.info "-------------- Test setup sent sleep command to make PC to sleep ---------------------"
+        log_time
+      end
+      sleep(4)
+      guard_time += 4
+    end
+
+    # wait for PC to sleep after sending "Sleep" command 
+    guard_time = 0
+    while (Time.now.to_i - @@heartbeat_time) < 10 do
+      if guard_time > 60*2 then
+        logger.info "-------------- Test setup failed to wait for PC to sleep within guard time -------------"
+        log_time
+        return false
+      end
+      sleep(4)
+      guard_time += 4
+    end
+
+    logger.info "------------------------------------ Test setup: success -----------------------------------"
+    log_time
+    return true
+  end
+
 end
