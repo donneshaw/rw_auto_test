@@ -5,7 +5,7 @@ class ApiController < ApplicationController
   @@test_running = false  # to limit that only one thread of test execution is running
   @@sessionId = nil
   @@command = nil
-  @@heartbeat_time  # the time when the latest heartbeat is received
+  @@heartbeat_time = 0  # the time when the latest heartbeat is received
   TEST_TIMES = 10
 
   def login
@@ -123,7 +123,7 @@ class ApiController < ApplicationController
         # 3. Send "Wake Up" command to wake PC up
         sleep(10)
         rw.wake 
-        @sessionId = nil # to wait for new session Id
+        @@sessionId = nil # to wait for new session Id
         logger.info "----------------- Command sent: Wake Up.-------------------------"
         log_time
         # wait for heartbeat
@@ -187,6 +187,7 @@ private
     logger.info "-------------------- Start to wait for new session Id -----------------"
     log_time
     guard_time = 0
+    logger.info "-------------------- sessionId: #{@@sessionId} ------------------------"
     while @@sessionId.nil? do
       if guard_time > 60*5 then
         logger.info "---------------- Test setup failed to get session Id within guard time -------------"
@@ -202,12 +203,12 @@ private
         end
       end        
       
-      if (Time.now.to_i - @@heartbeat_time) > 10 then
-        # 2 times of Magic Packets fail to wake up the PC
-        # setup fail
-        logger.info "--------------- Magic Packet fail to wake up RemoteMonitor PC for 2 times ---------------"
-        return false       
-      end
+      # if (Time.now.to_i - @@heartbeat_time) > 10 then
+      #   # 2 times of Magic Packets fail to wake up the PC
+      #   # setup fail
+      #   logger.info "--------------- Magic Packet fail to wake up RemoteMonitor PC for 2 times ---------------"
+      #   return false       
+      # end
 
       # PC is sending HB, check session Id every 4s
       sleep(4)
@@ -222,6 +223,7 @@ private
         logger.info "-------------- Test setup failed to wait for PC to auto sleep within guard time -------------"
         logger.info "-------------- Test setup sent sleep command to make PC to sleep ---------------------"
         log_time
+        break
       end
       sleep(4)
       guard_time += 4
