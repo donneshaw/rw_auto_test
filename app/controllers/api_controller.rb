@@ -191,6 +191,7 @@ private
     while @@sessionId.nil? do
       if guard_time > 60*5 then
         logger.info "---------------- Test setup failed to get session Id within guard time -------------"
+        log_time
         return false
       end
       #if heartbeat stopped, try to wake the PC by Magic Packet, at most try for 2 times
@@ -198,6 +199,7 @@ private
         if (Time.now.to_i - @@heartbeat_time) > 10 then
           rw = WakeSession.new
           rw.sendMagicPkt
+          log_time
           @sessionId = nil # to wait for new session Id
           sleep(10)
         end

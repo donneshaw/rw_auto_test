@@ -122,7 +122,9 @@ class WakeSession
   def sendMagicPkt
     #macAddr = '3C:A9:F4:42:C7:74' # todo: comment this line after test.
     # todo: set ruby default encoding to UTF-8
-    macAddr = "3C:A9:F4:42:C7:74".force_encoding("ASCII-8BIT")
+    macAddr = "3C:A9:F4:50:E7:E8".force_encoding("ASCII-8BIT") 
+    # macAddr = "B4:B6:76:78:E9:FC".force_encoding("ASCII-8BIT") # CH_XPS12_1_RW
+  
     begin
       addr = ['<broadcast>', 9]
       udpSock = UDPSocket.new
